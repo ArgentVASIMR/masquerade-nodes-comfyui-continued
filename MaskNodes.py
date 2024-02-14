@@ -123,6 +123,7 @@ class ClipSegNode:
                 "negative_prompt": ("STRING", {"multiline": True}),
                 "precision": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "normalize": (["no", "yes"],),
+                "resampling": (["nearest", "bilinear", "bicubic", "area"],), # Added 14-02-2024
             },
         }
 
@@ -131,7 +132,7 @@ class ClipSegNode:
 
     CATEGORY = "Masquerade Nodes"
 
-    def get_mask(self, image, prompt, negative_prompt, precision, normalize):
+    def get_mask(self, image, prompt, negative_prompt, precision, normalize, resampling):
 
         model = self.load_model()
         image = tensor2rgb(image)
@@ -154,13 +155,13 @@ class ClipSegNode:
             dup_neg_prompts = [item for item in negative_prompts for _ in range(B)]
             negative_preds = model(img.repeat(len(negative_prompts), 1, 1, 1), dup_neg_prompts)[0] if len(negative_prompts) > 0 else None
 
-        preds = torch.nn.functional.interpolate(preds, size=(H, W), mode='nearest')
+        preds = torch.nn.functional.interpolate(preds, size=(H, W), mode=resampling)
         preds = torch.sigmoid(preds)
         preds = preds.reshape(len(prompts), B, H, W)
         mask = torch.max(preds, dim=0).values
 
         if len(negative_prompts) > 0:
-            negative_preds = torch.nn.functional.interpolate(negative_preds, size=(H, W), mode='nearest')
+            negative_preds = torch.nn.functional.interpolate(negative_preds, size=(H, W), mode=resampling)
             negative_preds = torch.sigmoid(negative_preds)
             negative_preds = negative_preds.reshape(len(negative_prompts), B, H, W)
             mask_neg = torch.max(negative_preds, dim=0).values
@@ -681,6 +682,7 @@ class CutByMask:
                 "mask": ("IMAGE",),
                 "force_resize_width": ("INT", {"default": 0, "min": 0, "max": VERY_BIG_SIZE, "step": 1}),
                 "force_resize_height": ("INT", {"default": 0, "min": 0, "max": VERY_BIG_SIZE, "step": 1}),
+                "resampling": (["nearest", "bilinear", "bicubic", "area"],), # Added 14-02-2024
             },
             "optional": {
                 "mask_mapping_optional": ("MASK_MAPPING",),
@@ -692,7 +694,7 @@ class CutByMask:
 
     CATEGORY = "Masquerade Nodes"
 
-    def cut(self, image, mask, force_resize_width, force_resize_height, mask_mapping_optional = None):
+    def cut(self, image, mask, force_resize_width, force_resize_height, resampling, mask_mapping_optional = None):
         if len(image.shape) < 4:
             C = 1
         else:
@@ -707,7 +709,7 @@ class CutByMask:
 
         # Scale the mask to be a matching size if it isn't
         B, H, W, _ = image.shape
-        mask = torch.nn.functional.interpolate(mask.unsqueeze(1), size=(H, W), mode='nearest')[:,0,:,:]
+        mask = torch.nn.functional.interpolate(mask.unsqueeze(1), size=(H, W), mode=resampling)[:,0,:,:]
         MB, _, _ = mask.shape
 
         if MB < B:
@@ -750,7 +752,7 @@ class CutByMask:
                 xmin = int(min_x[i].item())
                 xmax = int(max_x[i].item())
                 single = (image[i, ymin:ymax+1, xmin:xmax+1,:]).unsqueeze(0)
-                resized = torch.nn.functional.interpolate(single.permute(0, 3, 1, 2), size=(use_height, use_width), mode='bicubic').permute(0, 2, 3, 1)
+                resized = torch.nn.functional.interpolate(single.permute(0, 3, 1, 2), size=(use_height, use_width), mode=resampling).permute(0, 2, 3, 1)
                 result[i] = resized[0]
 
         # Preserve our type unless we were previously RGB and added non-opaque alpha due to the mask size
@@ -823,7 +825,7 @@ class PasteByMask:
                 "image_to_paste": ("IMAGE",),
                 "mask": ("IMAGE",),
                 "resize_behavior": (["resize", "keep_ratio_fill", "keep_ratio_fit", "source_size", "source_size_unmasked"],),
-                "resampling": (["lanczos", "nearest", "bilinear", "bicubic"],),
+                "resampling": (["nearest", "bilinear", "bicubic", "area"],), # Added 14-02-2024
             },
             "optional": {
                 "mask_mapping_optional": ("MASK_MAPPING",),
@@ -835,7 +837,7 @@ class PasteByMask:
 
     CATEGORY = "Masquerade Nodes"
 
-    def paste(self, image_base, image_to_paste, mask, resize_behavior, mask_mapping_optional = None):
+    def paste(self, image_base, image_to_paste, mask, resize_behavior, resampling, mask_mapping_optional = None):
         image_base = tensor2rgba(image_base)
         image_to_paste = tensor2rgba(image_to_paste)
         mask = tensor2mask(mask)
@@ -858,7 +860,7 @@ class PasteByMask:
             if PB < B:
                 assert(B % PB == 0)
                 image_to_paste = image_to_paste.repeat(B // PB, 1, 1, 1)
-        mask = torch.nn.functional.interpolate(mask.unsqueeze(1), size=(H, W), mode='nearest')[:,0,:,:]
+        mask = torch.nn.functional.interpolate(mask.unsqueeze(1), size=(H, W), mode=resampling)[:,0,:,:]
         MB, MH, MW = mask.shape
 
         # masks_to_boxes errors if the tensor is all zeros, so we'll add a single pixel and zero it out at the end
