@@ -822,7 +822,8 @@ class PasteByMask:
                 "image_base": ("IMAGE",),
                 "image_to_paste": ("IMAGE",),
                 "mask": ("IMAGE",),
-                "resize_behavior": (["resize", "keep_ratio_fill", "keep_ratio_fit", "source_size", "source_size_unmasked"],)
+                "resize_behavior": (["resize", "keep_ratio_fill", "keep_ratio_fit", "source_size", "source_size_unmasked"],),
+                "resampling": (["lanczos", "nearest", "bilinear", "bicubic"],),
             },
             "optional": {
                 "mask_mapping_optional": ("MASK_MAPPING",),
@@ -911,7 +912,7 @@ class PasteByMask:
                 # Resize the image we're pasting if needed
                 resized_image = image_to_paste[i].unsqueeze(0)
                 if SH != height or SW != width:
-                    resized_image = torch.nn.functional.interpolate(resized_image.permute(0, 3, 1, 2), size=(height,width), mode='bicubic').permute(0, 2, 3, 1)
+                    resized_image = torch.nn.functional.interpolate(resized_image.permute(0, 3, 1, 2), size=(height,width), mode=resampling).permute(0, 2, 3, 1)
 
                 pasting = torch.ones([H, W, C])
                 ymid = float(mid_y[i].item())
